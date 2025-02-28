@@ -14,7 +14,10 @@
 
 //Add all your global variables and definitions here.
 #define MATRIX_SIZE 1000
+#define NUM_CHILD_PROCS 10
 
+float arr1[MATRIX_SIZE][MATRIX_SIZE];
+float arr2[MATRIX_SIZE][MATRIX_SIZE];
 
 void semaphore_init(int sem_id, int sem_num, int init_valve)
 {
@@ -53,11 +56,60 @@ void print_stats() {
 
 int main(int argc, char const *argv[])
 {
+    //loading matrices from file to memory
+    FILE *fp1 = fopen("mat1.csv", "r");
+    FILE *fp2 = fopen("mat2.csv", "r");
+    for(int i = 0; i < MATRIX_SIZE; i++) {
+        for(int j = 0; j < MATRIX_SIZE; j++) {
+            float f; 
+            fscanf(fp1, "%f,", &f);
+            arr1[i][j] = f;
+            fscanf(fp2, "%f,", &f);
+            arr2[i][j] = f;    
+        }
+    }
+    fclose(fp1);
+    fclose(fp2);
+
+    int proc_num = -1;
+    int p;
+    for(int i = 0; i < NUM_CHILD_PROCS; i++) {
+        p = fork();
+        if (!p) {
+            proc_num = i;
+            break;
+        }
+    }
+
+    //parent
+    if (p) {
 
 
-   print_stats(); 
-
-   return 0;
+    //child
+    } else {
+        //each process gets a number of rows from start (inclusive) to end (exclusive), 0-indexed.
+        int start;
+        int end;
+        
+        //calculating start and end positions is easy if the matrix size is easily divisible by the number of child processes
+        if (MATRIX_SIZE % NUM_CHILD_PROCS == 0) {
+            start = proc_num * MATRIX_SIZE/NUM_CHILD_PROCS;
+            end = (proc_num+1) * MATRIX_SIZE/NUM_CHILD_PROCS;
+        }
+        //otherwise it's a bit harder. I do this in the child processes rather than in parent, for speed
+        else if (MATRIX_SIZE % NUM_CHILD_PROCS >= proc_num) {
+            start = proc_num * (MATRIX_SIZE/NUM_CHILD_PROCS + 1);
+            if (MATRIX_SIZE % NUM_CHILD_PROCS == proc_num) {
+                end = start + (MATRIX_SIZE/NUM_CHILD_PROCS);
+            } else {
+                end = start + (MATRIX_SIZE/NUM_CHILD_PROCS + 1);
+            }
+        } else {
+            start = (MATRIX_SIZE % NUM_CHILD_PROCS) * (MATRIX_SIZE/NUM_CHILD_PROCS + 1) + (proc_num - (MATRIX_SIZE % NUM_CHILD_PROCS)) * (MATRIX_SIZE/NUM_CHILD_PROCS);
+            end = start + (MATRIX_SIZE/NUM_CHILD_PROCS);
+        }
+    }
+    return 0;
 }
 
 
