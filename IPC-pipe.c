@@ -13,32 +13,43 @@
 #include <sys/time.h>
 
 //Add all your global variables and definitions here.
-#define MATRIX_SIZE 1000
-#define NUM_CHILD_PROCS 10
+#define MATRIX_SIZE 100
+#define NUM_CHILD_PROCS 8
 
 float arr1[MATRIX_SIZE][MATRIX_SIZE];
 float arr2[MATRIX_SIZE][MATRIX_SIZE];
 float out[MATRIX_SIZE][MATRIX_SIZE];
+union semun {
+    int val;               // Value for SETVAL
+    struct semid_ds *buf;  // Buffer for IPC_STAT, IPC_SET
+    unsigned short *array; // Array for GETALL, SETALL
+    struct seminfo *__buf; // Buffer for IPC_INFO (Linux-specific)
+};
 
 void semaphore_init(int sem_id, int sem_num, int init_valve)
 {
-
-   //Use semctl to initialize a semaphore
+    //Use semctl to initialize a semaphore
+    union semun arg;
+    arg.val = init_valve;
+    semctl(sem_id, sem_num, SETVAL, init_valve);
 }
 
 void semaphore_release(int sem_id, int sem_num)
 {
-  //Use semop to release a semaphore
+    //Use semop to release a semaphore
+    struct sembuf release_op = {sem_num, 1, 0};
+    semop(sem_id, &release_op, 1);
 }
 
 void semaphore_reserve(int sem_id, int sem_num)
 {
-
-  //Use semop to acquire a semaphore
+    //Use semop to acquire a semaphore
+    struct sembuf reserve_op = {sem_num, -1, 0};
+    semop(sem_id, &reserve_op, 1);
 }
 
 /* Time function that calculates time between start and end */
-double getdetlatimeofday(struct timeval *begin, struct timeval *end)
+double getdeltatimeofday(struct timeval *begin, struct timeval *end)
 {
     return (end->tv_sec + end->tv_usec * 1.0 / 1000000) -
            (begin->tv_sec + begin->tv_usec * 1.0 / 1000000);
@@ -57,7 +68,18 @@ void print_stats() {
 
 int main(int argc, char const *argv[])
 {
+    printf("Starting...\n");
+    struct timeval begin;
+    struct timeval end;
+    gettimeofday(&begin, NULL);
+
+    //initializing semaphores. semaphore 0 = "buf empty", 1 = "buf full"
+    int sem_id = semget(IPC_PRIVATE, 2, IPC_CREAT | 0666);
+    semaphore_init(sem_id, 0, 1);
+    semaphore_init(sem_id, 1, 0);
+
     //loading matrices from file to memory
+    printf("Loading matrices...\n");
     FILE *fp1 = fopen("mat1.csv", "r");
     FILE *fp2 = fopen("mat2.csv", "r");
     for(int i = 0; i < MATRIX_SIZE; i++) {
@@ -77,6 +99,7 @@ int main(int argc, char const *argv[])
     pipe(pipefd);
 
     //forking procs
+    printf("Forking...\n");
     int proc_num = -1;
     int p;
     for(int i = 0; i < NUM_CHILD_PROCS; i++) {
@@ -89,7 +112,10 @@ int main(int argc, char const *argv[])
 
     //parent
     if (p) {
+        printf("Doing work...\n");
         close(pipefd[1]); //close write end
+
+        int total_calculated = 0;
 
         //waits until buffer is full, then writes
         int row_start;
@@ -98,6 +124,7 @@ int main(int argc, char const *argv[])
         int col_end;
         float *buf = malloc(512*sizeof(float));
         while(1) {
+            semaphore_reserve(sem_id, 1);
             read(pipefd[0], &row_start, sizeof(int));
             read(pipefd[0], &col_start, sizeof(int));
             read(pipefd[0], &row_end, sizeof(int));
@@ -116,11 +143,30 @@ int main(int argc, char const *argv[])
                 for(int j = start; j <= end; j++) {
                     out[i][j] = buf[buf_pos];
                     buf_pos++;
+                    total_calculated++;
+                }
+            }
+            semaphore_release(sem_id, 0);
+            if (total_calculated >= MATRIX_SIZE*MATRIX_SIZE) {
+                break;
+            }
+        }
+        FILE *out_fd = fopen("mat-out.csv", "w");
+        for(int i = 0; i < MATRIX_SIZE; i++) {
+            for(int j = 0; j < MATRIX_SIZE; j++) {
+                if (MATRIX_SIZE - 1 == j) {
+                    fprintf(out_fd, "%.2f\n", out[i][j]);
+                } else {
+                    fprintf(out_fd, "%.2f,", out[i][j]);
                 }
             }
         }
+        gettimeofday(&end, NULL);
+        double time_passed = getdeltatimeofday(&begin, &end);
+        printf("Done! Time to complete: %lf\n", time_passed);
         free(buf);
-
+        semctl(sem_id, 0, IPC_RMID);
+        semctl(sem_id, 1, IPC_RMID);
     //child
     } else {
         close(pipefd[0]); //close read end
@@ -148,12 +194,18 @@ int main(int argc, char const *argv[])
         }
 
         //calculates until buffer full. then write to pipe for parent process to do its job
-        int row_start = start;
-        int col_start = 0;
+        int row_start;
+        int col_start;
+        int start_flag = 1;
         float *buf = malloc(512*sizeof(float));
         int buf_pos = 0;
         for(int i = start; i < end; i++) {
             for(int j = 0; j < MATRIX_SIZE; j++) {
+                if (start_flag) {
+                    start_flag = 0;
+                    row_start = i;
+                    col_start = j;
+                }
                 float curr = 0;
                 for(int k = 0; k < MATRIX_SIZE; k++) {
                     curr+=(arr1[i][k]*arr2[k][j]);
@@ -161,14 +213,29 @@ int main(int argc, char const *argv[])
                 buf[buf_pos] = curr;
                 buf_pos++;
                 if (buf_pos == 512) {
+                    semaphore_reserve(sem_id, 0);
                     write(pipefd[1], &row_start, sizeof(int));
                     write(pipefd[1], &col_start, sizeof(int));
                     write(pipefd[1], &i, sizeof(int));
                     write(pipefd[1], &j, sizeof(int));
                     write(pipefd[1], buf, 512*sizeof(float));
+                    semaphore_release(sem_id, 1);
+                    start_flag = 1;
                     buf_pos = 0;
                 }
             }
+        }
+        //write remaining work in buffer
+        int last_i = end-1;
+        int last_j = MATRIX_SIZE-1;
+        if (buf_pos) {
+            semaphore_reserve(sem_id, 0);
+            write(pipefd[1], &row_start, sizeof(int));
+            write(pipefd[1], &col_start, sizeof(int));
+            write(pipefd[1], &last_i, sizeof(int));
+            write(pipefd[1], &last_j, sizeof(int));
+            write(pipefd[1], buf, 512*sizeof(float));
+            semaphore_release(sem_id, 1);
         }
         free(buf);
     }

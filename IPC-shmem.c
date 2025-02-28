@@ -13,7 +13,7 @@
 #include <sys/time.h>
 
 //Add all your global variables and definitions here.
-#define MATRIX_SIZE 1000
+#define MATRIX_SIZE 10000
 
 
 void semaphore_init(int sem_id, int sem_num, int init_valve)
