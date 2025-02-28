@@ -18,6 +18,7 @@
 
 float arr1[MATRIX_SIZE][MATRIX_SIZE];
 float arr2[MATRIX_SIZE][MATRIX_SIZE];
+float out[MATRIX_SIZE][MATRIX_SIZE];
 
 void semaphore_init(int sem_id, int sem_num, int init_valve)
 {
@@ -71,6 +72,11 @@ int main(int argc, char const *argv[])
     fclose(fp1);
     fclose(fp2);
 
+    //setting up pipe
+    int pipefd[2];
+    pipe(pipefd);
+
+    //forking procs
     int proc_num = -1;
     int p;
     for(int i = 0; i < NUM_CHILD_PROCS; i++) {
@@ -83,10 +89,42 @@ int main(int argc, char const *argv[])
 
     //parent
     if (p) {
+        close(pipefd[1]); //close write end
 
+        //waits until buffer is full, then writes
+        int row_start;
+        int col_start;
+        int row_end;
+        int col_end;
+        float *buf = malloc(512*sizeof(float));
+        while() {
+            read(pipefd[0], &row_start, sizeof(int));
+            read(pipefd[0], &col_start, sizeof(int));
+            read(pipefd[0], &row_end, sizeof(int));
+            read(pipefd[0], &col_end, sizeof(int));
+            read(pipefd[0], buf, 512*sizeof(float));
+            int buf_pos = 0;
+            for(int i = row_start; i <= row_end; i++) {
+                int end = MATRIX_SIZE-1;
+                int start = 0;
+                if (i == row_start) {
+                    start = col_start;
+                }
+                if (i == row_end) {
+                    end = col_end;
+                }
+                for(j = start; j <= end; j++) {
+                    out[i][j] = buf[buf_pos]
+                    buf_pos++;
+                }
+            }
+        }
+        free(buf);
 
     //child
     } else {
+        close(pipefd[0]); //close read end
+
         //each process gets a number of rows from start (inclusive) to end (exclusive), 0-indexed.
         int start;
         int end;
@@ -108,6 +146,31 @@ int main(int argc, char const *argv[])
             start = (MATRIX_SIZE % NUM_CHILD_PROCS) * (MATRIX_SIZE/NUM_CHILD_PROCS + 1) + (proc_num - (MATRIX_SIZE % NUM_CHILD_PROCS)) * (MATRIX_SIZE/NUM_CHILD_PROCS);
             end = start + (MATRIX_SIZE/NUM_CHILD_PROCS);
         }
+
+        //calculates until buffer full. then write to pipe for parent process to do its job
+        int row_start = start;
+        int col_start = 0;
+        float *buf = malloc(512*sizeof(float));
+        int buf_pos = 0;
+        for(int i = start; i < end; i++) {
+            for(int j = 0; j < MATRIX_SIZE; j++) {
+                float curr = 0;
+                for(int k = 0; k < MATRIX_SIZE; k++) {
+                    curr+=(arr1[i][k]*arr2[k][j]);
+                }
+                buf[buf_pos] = curr;
+                buf_pos++;
+                if (buf_pos == 512) {
+                    write(pipefd[1], row_start, sizeof(int));
+                    write(pipefd[1], col_start, sizeof(int));
+                    write(pipefd[1], i, sizeof(int));
+                    write(pipefd[1], j, sizeof(int));
+                    write(pipefd[1], buf, 512*sizeof(float));
+                    buf_pos = 0;
+                }
+            }
+        }
+        free(buf);
     }
     return 0;
 }
