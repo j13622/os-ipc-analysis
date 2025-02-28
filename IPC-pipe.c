@@ -97,7 +97,7 @@ int main(int argc, char const *argv[])
         int row_end;
         int col_end;
         float *buf = malloc(512*sizeof(float));
-        while() {
+        while(1) {
             read(pipefd[0], &row_start, sizeof(int));
             read(pipefd[0], &col_start, sizeof(int));
             read(pipefd[0], &row_end, sizeof(int));
@@ -113,8 +113,8 @@ int main(int argc, char const *argv[])
                 if (i == row_end) {
                     end = col_end;
                 }
-                for(j = start; j <= end; j++) {
-                    out[i][j] = buf[buf_pos]
+                for(int j = start; j <= end; j++) {
+                    out[i][j] = buf[buf_pos];
                     buf_pos++;
                 }
             }
@@ -161,10 +161,10 @@ int main(int argc, char const *argv[])
                 buf[buf_pos] = curr;
                 buf_pos++;
                 if (buf_pos == 512) {
-                    write(pipefd[1], row_start, sizeof(int));
-                    write(pipefd[1], col_start, sizeof(int));
-                    write(pipefd[1], i, sizeof(int));
-                    write(pipefd[1], j, sizeof(int));
+                    write(pipefd[1], &row_start, sizeof(int));
+                    write(pipefd[1], &col_start, sizeof(int));
+                    write(pipefd[1], &i, sizeof(int));
+                    write(pipefd[1], &j, sizeof(int));
                     write(pipefd[1], buf, 512*sizeof(float));
                     buf_pos = 0;
                 }
