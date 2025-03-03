@@ -2,6 +2,7 @@
  * IPC using pipes to perform matrix multiplication.
  * Feel free to extend or change any code or functions below.
  */
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,14 +12,21 @@
 #include <sys/ipc.h>
 #include <sys/types.h>
 #include <sys/time.h>
+#include <sched.h>
+
 
 //Add all your global variables and definitions here.
-#define MATRIX_SIZE 100
+#define MATRIX_SIZE 1000
 #define NUM_CHILD_PROCS 8
+#define NUM_CORES 8
 
 float arr1[MATRIX_SIZE][MATRIX_SIZE];
 float arr2[MATRIX_SIZE][MATRIX_SIZE];
 float out[MATRIX_SIZE][MATRIX_SIZE];
+
+struct timeval begin;
+struct timeval end;
+
 union semun {
     int val;               // Value for SETVAL
     struct semid_ds *buf;  // Buffer for IPC_STAT, IPC_SET
@@ -60,17 +68,15 @@ double getdeltatimeofday(struct timeval *begin, struct timeval *end)
  * to provide.
  */
 void print_stats() {
-
-
-
+    printf("Input size: %d columns, %d rows\n", MATRIX_SIZE, MATRIX_SIZE);
+    printf("Total cores: %d\n", NUM_CORES);
+    double runtime = getdeltatimeofday(&begin, &end);
+    printf("Total runtime: %lf\n", runtime);
 }
 
 
 int main(int argc, char const *argv[])
 {
-    printf("Starting...\n");
-    struct timeval begin;
-    struct timeval end;
     gettimeofday(&begin, NULL);
 
     //initializing semaphores. semaphore 0 = "buf empty", 1 = "buf full"
@@ -79,7 +85,6 @@ int main(int argc, char const *argv[])
     semaphore_init(sem_id, 1, 0);
 
     //loading matrices from file to memory
-    printf("Loading matrices...\n");
     FILE *fp1 = fopen("mat1.csv", "r");
     FILE *fp2 = fopen("mat2.csv", "r");
     for(int i = 0; i < MATRIX_SIZE; i++) {
@@ -97,9 +102,18 @@ int main(int argc, char const *argv[])
     //setting up pipe
     int pipefd[2];
     pipe(pipefd);
+    size_t pipesize = fpathconf(pipefd[0], _PC_PIPE_BUF);
+    int buf_size = (pipesize-4*sizeof(int))/sizeof(float);
+
+    //setting up core count
+    cpu_set_t mask;
+    CPU_ZERO(&mask);
+    for(int i = 0; i < NUM_CORES; i++) {
+        CPU_SET(i, &mask);
+    }
+    sched_setaffinity(0, sizeof(cpu_set_t), &mask);
 
     //forking procs
-    printf("Forking...\n");
     int proc_num = -1;
     int p;
     for(int i = 0; i < NUM_CHILD_PROCS; i++) {
@@ -112,7 +126,6 @@ int main(int argc, char const *argv[])
 
     //parent
     if (p) {
-        printf("Doing work...\n");
         close(pipefd[1]); //close write end
 
         int total_calculated = 0;
@@ -122,14 +135,14 @@ int main(int argc, char const *argv[])
         int col_start;
         int row_end;
         int col_end;
-        float *buf = malloc(512*sizeof(float));
+        float *buf = malloc(buf_size*sizeof(float));
         while(1) {
             semaphore_reserve(sem_id, 1);
             read(pipefd[0], &row_start, sizeof(int));
             read(pipefd[0], &col_start, sizeof(int));
             read(pipefd[0], &row_end, sizeof(int));
             read(pipefd[0], &col_end, sizeof(int));
-            read(pipefd[0], buf, 512*sizeof(float));
+            read(pipefd[0], buf, buf_size*sizeof(float));
             int buf_pos = 0;
             for(int i = row_start; i <= row_end; i++) {
                 int end = MATRIX_SIZE-1;
@@ -151,7 +164,7 @@ int main(int argc, char const *argv[])
                 break;
             }
         }
-        FILE *out_fd = fopen("mat-out.csv", "w");
+        FILE *out_fd = fopen("mat-out-pipe.csv", "w");
         for(int i = 0; i < MATRIX_SIZE; i++) {
             for(int j = 0; j < MATRIX_SIZE; j++) {
                 if (MATRIX_SIZE - 1 == j) {
@@ -162,9 +175,9 @@ int main(int argc, char const *argv[])
             }
         }
         gettimeofday(&end, NULL);
-        double time_passed = getdeltatimeofday(&begin, &end);
-        printf("Done! Time to complete: %lf\n", time_passed);
+        print_stats();
         free(buf);
+        fclose(out_fd);
         semctl(sem_id, 0, IPC_RMID);
         semctl(sem_id, 1, IPC_RMID);
     //child
@@ -197,7 +210,7 @@ int main(int argc, char const *argv[])
         int row_start;
         int col_start;
         int start_flag = 1;
-        float *buf = malloc(512*sizeof(float));
+        float *buf = malloc(buf_size*sizeof(float));
         int buf_pos = 0;
         for(int i = start; i < end; i++) {
             for(int j = 0; j < MATRIX_SIZE; j++) {
@@ -212,13 +225,13 @@ int main(int argc, char const *argv[])
                 }
                 buf[buf_pos] = curr;
                 buf_pos++;
-                if (buf_pos == 512) {
+                if (buf_pos == buf_size) {
                     semaphore_reserve(sem_id, 0);
                     write(pipefd[1], &row_start, sizeof(int));
                     write(pipefd[1], &col_start, sizeof(int));
                     write(pipefd[1], &i, sizeof(int));
                     write(pipefd[1], &j, sizeof(int));
-                    write(pipefd[1], buf, 512*sizeof(float));
+                    write(pipefd[1], buf, buf_size*sizeof(float));
                     semaphore_release(sem_id, 1);
                     start_flag = 1;
                     buf_pos = 0;
@@ -234,7 +247,7 @@ int main(int argc, char const *argv[])
             write(pipefd[1], &col_start, sizeof(int));
             write(pipefd[1], &last_i, sizeof(int));
             write(pipefd[1], &last_j, sizeof(int));
-            write(pipefd[1], buf, 512*sizeof(float));
+            write(pipefd[1], buf, buf_size*sizeof(float));
             semaphore_release(sem_id, 1);
         }
         free(buf);
