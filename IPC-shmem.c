@@ -16,9 +16,15 @@
 #include <sched.h>
 
 //Add all your global variables and definitions here.
+#ifndef MATRIX_SIZE
 #define MATRIX_SIZE 1000
+#endif
+#ifndef NUM_CHILD_PROCS
 #define NUM_CHILD_PROCS 8
+#endif
+#ifndef NUM_CORES
 #define NUM_CORES 8
+#endif
 
 float arr1[MATRIX_SIZE][MATRIX_SIZE];
 float arr2[MATRIX_SIZE][MATRIX_SIZE];
@@ -132,8 +138,6 @@ int main(int argc, char const *argv[])
             end = start + (MATRIX_SIZE/NUM_CHILD_PROCS);
         }
 
-        int row_start;
-        int col_start;
         for(int i = start; i < end; i++) {
             for(int j = 0; j < MATRIX_SIZE; j++) {
                 float curr = 0;

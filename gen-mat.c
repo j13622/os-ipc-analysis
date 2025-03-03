@@ -2,7 +2,9 @@
 #include <stdlib.h>
 #include <time.h>
 
+#ifndef MATRIX_SIZE
 #define MATRIX_SIZE 1000
+#endif
 
 //generates matrices with values from -100.00 to +100.00
 int main() {

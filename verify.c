@@ -1,7 +1,9 @@
 #include <stdio.h>
 #include <math.h>
 
+#ifndef MATRIX_SIZE
 #define MATRIX_SIZE 1000
+#endif
 
 float arr1[MATRIX_SIZE][MATRIX_SIZE];
 float arr2[MATRIX_SIZE][MATRIX_SIZE];
@@ -41,7 +43,7 @@ int main(int argc, char const *argv[]) {
             out[i][j] = curr;
         }
     }
-    
+
     //there's weird errors with floating point precision so I just output to verify.csv with 2 decimal places and then read back
     FILE *out_fd = fopen("mat-out-verify.csv", "w");
     for(int i = 0; i < MATRIX_SIZE; i++) {
@@ -69,10 +71,7 @@ int main(int argc, char const *argv[]) {
     for(int i = 0; i < MATRIX_SIZE; i++) {
         for(int j = 0; j < MATRIX_SIZE; j++) {
             //rounding to 2 decimal places
-            float roundOut = roundf(out[i][j] * 100.0) / 100.0;
-            float roundShMem = roundf(shmemArr[i][j] * 100.0) / 100.0;
-            float roundPipe = roundf(pipeArr[i][j] * 100.0) / 100.0;
-            if (roundOut != roundShMem && shmemGood) {
+            if (out[i][j] != shmemArr[i][j] && shmemGood) {
                 shmemGood = 0;
                 printf("IPC-shmem verification failed\n");
                 printf("%f %f\n", out[i][j], shmemArr[i][j]);
@@ -80,7 +79,7 @@ int main(int argc, char const *argv[]) {
                     break;
                 }
             }
-            if (roundOut != roundPipe && pipeGood) {
+            if (out[i][j] != pipeArr[i][j] && pipeGood) {
                 pipeGood = 0;
                 printf("IPC-pipe verification failed\n");
                 printf("%f %f\n", out[i][j], pipeArr[i][j]);

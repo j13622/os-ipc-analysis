@@ -1,18 +1,17 @@
+MATRIX_SIZE = 1000
+NUM_CORES = 8
+NUM_CHILD_PROCS = 8
+
 CC = gcc
+COMMON_CFLAGS = -Wall -D MATRIX_SIZE=$(MATRIX_SIZE)
+PROGRAMS = gen-mat IPC-pipe IPC-shmem verify
 
-all: gen-mat IPC-pipe IPC-shmem verify
+IPC-pipe IPC-shmem: IPC_CFLAGS = -D NUM_CORES=$(NUM_CORES) -D NUM_CHILD_PROCS=$(NUM_CHILD_PROCS)
 
-gen-mat: gen-mat.c
-	$(CC) -o gen-mat gen-mat.c
+all: $(PROGRAMS)
 
-IPC-pipe: IPC-pipe.c
-	$(CC) -o IPC-pipe IPC-pipe.c
-
-IPC-shmem: IPC-shmem.c
-	$(CC) -o IPC-shmem IPC-shmem.c
-
-verify: verify.c
-	$(CC) -o verify verify.c -lm
+%: %.c
+	$(CC) $(COMMON_CFLAGS) $(IPC_CFLAGS) -o $@ $<
 
 clean:
-	rm -f IPC-pipe IPC-shmem verify gen-mat
+	rm -f $(PROGRAMS)

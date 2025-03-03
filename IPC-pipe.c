@@ -16,9 +16,15 @@
 
 
 //Add all your global variables and definitions here.
+#ifndef MATRIX_SIZE
 #define MATRIX_SIZE 1000
+#endif
+#ifndef NUM_CHILD_PROCS
 #define NUM_CHILD_PROCS 8
+#endif
+#ifndef NUM_CORES
 #define NUM_CORES 8
+#endif
 
 float arr1[MATRIX_SIZE][MATRIX_SIZE];
 float arr2[MATRIX_SIZE][MATRIX_SIZE];
@@ -36,9 +42,6 @@ union semun {
 
 void semaphore_init(int sem_id, int sem_num, int init_valve)
 {
-    //Use semctl to initialize a semaphore
-    union semun arg;
-    arg.val = init_valve;
     semctl(sem_id, sem_num, SETVAL, init_valve);
 }
 
