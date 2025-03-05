@@ -27,7 +27,7 @@
 #endif
 
 float arr1[MATRIX_SIZE][MATRIX_SIZE];
-float arr2[MATRIX_SIZE][MATRIX_SIZE];
+float arr2_transpose[MATRIX_SIZE][MATRIX_SIZE];
 
 struct timeval begin;
 struct timeval end;
@@ -63,7 +63,7 @@ int main(int argc, char const *argv[])
             fscanf(fp1, "%f,", &f);
             arr1[i][j] = f;
             fscanf(fp2, "%f,", &f);
-            arr2[i][j] = f;    
+            arr2_transpose[j][i] = f;    
         }
     }
     fclose(fp1);
@@ -142,7 +142,7 @@ int main(int argc, char const *argv[])
             for(int j = 0; j < MATRIX_SIZE; j++) {
                 float curr = 0;
                 for(int k = 0; k < MATRIX_SIZE; k++) {
-                    curr+=(arr1[i][k]*arr2[k][j]);
+                    curr+=(arr1[i][k]*arr2_transpose[j][k]);
                 }
                 out[i*MATRIX_SIZE + j] = curr;
             }
